@@ -3,3 +3,6 @@ Data/
 !Manifest.toml
 
 *.tmp
+*.dot 
+*.pdf 
+*.svg

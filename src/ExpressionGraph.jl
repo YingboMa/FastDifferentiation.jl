@@ -79,16 +79,18 @@ Base.zero(::Node) = Node(0)
 Base.one(::Type{Node}) = Node(1)
 Base.one(::Node) = Node(1)
 
+Broadcast.broadcastable(a::Node) = (a,)
+
 value(a::Node) = a.node_value
-export value
+
 arity(::Node{T,N}) where {T,N} = N
-export arity
+
 
 is_leaf(::Node{T,0}) where {T} = true
 is_leaf(::Node{T,N}) where {T,N} = false
-export is_leaf
+
 is_tree(::Node{T,N}) where {T,N} = N >= 1
-export is_tree
+
 
 function is_unspecified_function(a::Node)
     node_val = value(a)
@@ -107,13 +109,13 @@ function is_unspecified_function(a::Node)
     #     return false
     # end
 end
-export is_unspecified_function
+
 
 is_variable(a::Node) = SymbolicUtils.issym(value(a))
-export is_variable
+
 
 is_constant(a::Node) = !is_variable(a) && !is_tree(a) #pretty confident this is correct but there may be edges cases in Symbolics I am not aware of.
-export is_constant
+
 
 function constant_value(a::Node)
     if is_constant(a)
@@ -122,7 +124,7 @@ function constant_value(a::Node)
         return nothing
     end
 end
-export constant_value
+
 
 function is_zero(a::Node)
     if is_tree(a) || is_variable(a)
@@ -133,7 +135,7 @@ function is_zero(a::Node)
         return false
     end
 end
-export is_zero
+
 
 function is_one(a::Node)
     if is_tree(a) || is_variable(a)
@@ -144,7 +146,7 @@ function is_one(a::Node)
         return false
     end
 end
-export is_one
+
 
 #Simple algebraic simplification rules for *,+,-,/. These are mostly safe, i.e., they will return exactly the same results as IEEE arithmetic. However multiplication by 0 always simplifies to 0, which is not true for IEEE arithmetic: 0*NaN=NaN, 0*Inf = NaN, for example. This should be a good tradeoff, since zeros are common in derivative expressions and can result in considerable expression simplification. Maybe later make this opt-out.
 
@@ -152,16 +154,18 @@ simplify_check_cache(a, b, c, cache) = check_cache((a, b, c), cache)
 
 is_nary(a::Node{T,N}) where {T,N} = N > 2
 is_times(a::Node) = value(a) == *
-export is_times
 
 is_nary_times(a::Node) = is_nary(a) && value(a) == typeof(*)
-export is_nary_times
 
 function simplify_check_cache(::typeof(^), a, b, cache)
     na = Node(a)
     nb = Node(b)
     if constant_value(na) !== nothing && constant_value(nb) !== nothing
         return Node(constant_value(na)^constant_value(nb))
+    elseif value(nb) == 0 #IEEE-754 standard says any number, including Inf, NaN, etc., to the zero power is 1
+        return Node(one(value(b))) #try to preserve number type
+    elseif value(nb) == 1
+        return a
     else
         return check_cache((^, na, nb), cache)
     end
@@ -198,7 +202,6 @@ function simplify_check_cache(::typeof(*), na, nb, cache)
         return check_cache((*, a, b), cache)
     end
 end
-export simplify_check_cache
 
 function simplify_check_cache(::typeof(+), na, nb, cache)
     a = Node(na)
@@ -312,6 +315,7 @@ end
 
 #need to define because derivative functions can return inv
 Base.inv(a::Node{typeof(/),2}) = children(a)[2] / children(a)[1]
+Base.inv(a::Node{SymbolicUtils.BasicSymbolic{Real},0}) = 1 / a
 
 #efficient explicit methods for most common cases
 derivative(a::Node{T,1}, index::Val{1}) where {T} = derivative(value(a), (children(a)[1],), index)
@@ -344,7 +348,7 @@ end
 
 """returns the leaf variables in a DAG. If a leaf is a Sym the assumption is that it is a variable. Leaves can also be numbers, which are not variables. Not certain how robust this is."""
 variables(node::Node) = filter((x) -> is_variable(x), graph_leaves(node)) #SymbolicUtils changed, used to use SymbolicUtils.Sym for this test.
-export variables
+
 
 # isvariable(a::Node) = SymbolicUtils.issym(node_value(a))
 # # isvariable(::Node{T,0}) where {T<:SymbolicUtils.Sym} = true
@@ -352,7 +356,7 @@ export variables
 # # isvariable(::Node) = false
 
 children(a::Node) = a.children
-export children
+
 
 function Base.show(io::IO, a::Node)
     print(io, to_string(a))
@@ -378,7 +382,6 @@ function to_string(a::Node)
         end
     end
 end
-export to_string
 
 expr_to_dag(x::NoDeriv, cache, substitions) = Node(NaN) #when taking the derivative with respect to the first element of 1.0*x Symbolics.derivative will return Symbolics.NoDeriv. These derivative values will never be used (or should never be used) in my derivative computation so set to NaN so error will show up if this ever happens.
 
@@ -517,15 +520,31 @@ function _make_function(dag::Node, variable_order::Union{T,Nothing}=nothing, nod
 
     body, variable = function_body(dag, node_to_var)
     push!(body.args, :(return $variable))
-    println(ordering)
+
     return Expr(:->, Expr(:tuple, map(x -> node_symbol(x), ordering)...), body)
 end
 
-"""Creates a runtime generated function that returns the value of the dag evaluated at the runtime variable values. If `variable_order` is `nothing` then the order of the arguments to the function will be however the variables happen to be ordered in the dag which is unpredictable and can lead to confusing results. In general you should set `variable_order` to non-nothing value. 
+"""Creates a runtime generated function that returns the value of the function expression evaluated at the runtime variable values. If `variable_order` is `nothing` then the order of the arguments to the function will be however the variables happen to be ordered when the expression graph was created. This is unpredictable, not guaranteed to be consistent between software releases, and can lead to confusing results. In general you should set `variable_order` to a non `nothing` value. 
 
-Variables can disappear from the dag during differentiation. For example, if  your dag is `2x+y^2` and you compute just the partial with respect to `x` the derivative function is the constant 2. If you call `make_function` on this dag with `variable_order=nothing` then the runtime derivative function will not have any arguments. 
+## Example:
 
-Since, in general, you do not know what the derivative of your function will be you will also not be able to predict what variables will be present in the derivative function. This makes it difficult to figure out how the runtime generated functions should be called. A simple solution is to always set `variable_order` to be all the variables in the original dag. Then the runtime function will take all those variables as arguments, even if none of them are present in the computed derivative.
+```
+julia>  @variables x y
+2-element Vector{Num}:
+ x
+ y
+julia> h = expr_to_dag(cos(x)*cos(y))
+(cos(x) * cos(y))
+
+julia> g = make_function(h,[x,y]);
+
+julia> g(1.0,2.0)
+-0.2248450953661529
+```
+
+Variables can disappear from the DAG during differentiation. For example, if  your dag is `2x+y^2` and you compute just the partial with respect to `x` the derivative function is the constant 2. If you call `make_function` on this dag with `variable_order=nothing` then the runtime derivative function will not have any arguments. 
+
+In general, you won't know what variables will be used in the derivative function. A simple solution to consistently and correctly evalute the derivative is to set `variable_order` to be all the variables in the original dag before differentiation. The runtime function will take all the variables as arguments, even if none of them are present in the computed derivative.
 """
 function make_function(dag::Node, variable_order::Union{T,Nothing}=nothing, node_to_var::Union{Nothing,Dict{Node,Union{Symbol,Real}}}=nothing) where {T<:AbstractVector{Num}}
     return @RuntimeGeneratedFunction(_make_function(dag, variable_order, node_to_var))
@@ -559,8 +578,6 @@ function postorder(roots::AbstractVector{T}) where {T<:Node}
     end
     return node_to_index, nodes, variables
 end
-export postorder
-
 
 """returns vector of `Node` entries in the tree in postorder, i.e., if `result[i] == a::Node` then the postorder number of `a` is`i`. Not Multithread safe."""
 function _postorder_nodes!(a::Node{T,N}, nodes::AbstractVector{S}, variables::AbstractVector{S}, visited::IdDict{Node,Int64}) where {T,N,S<:Node}
@@ -590,7 +607,6 @@ function all_nodes(a::Node, index_type=DefaultNodeIndexType)
     _all_nodes!(a, visited, nodes)
     return nodes
 end
-export all_nodes
 
 function _all_nodes!(node::Node, visited::Dict{Node,T}, nodes::Vector{Node}) where {T<:Integer}
     tmp = get(visited, node, nothing)
@@ -620,7 +636,18 @@ function graph_leaves(node::Node)
 
     return result
 end
-export graph_leaves
+
+function make_variables(name::Symbol, how_many::Int64)
+    result = Vector{Node}(undef, how_many)
+
+    for i in 1:how_many
+        temp = :(@variables $(Symbol(name, i)))
+        result[i] = Node(eval(temp)[1])
+    end
+    return result
+end
+export make_variables
+
 
 # macro declare_variables(a...)
 #     vars = filter(x->x isa Symbol,a)
@@ -636,27 +663,3 @@ export graph_leaves
 #     eval(:())
 # end
 
-# """inefficient exponential time algorithm to compute derivative. Only used for testing small examples"""
-# function all_paths_derivative(graph::DerivativeGraph)
-#     graph_root = root_index(graph)
-
-#     return sum(_all_paths_derivative.(Ref(graph), child_edges(graph, graph_root), Ref(Node(1))))
-# end
-# export all_paths_derivative
-
-# function _all_paths_derivative(graph::DerivativeGraph, edge::Edge{Int64}, prod)
-#     curr_node = edge.bott_vertex
-#     if isleaf(graph, curr_node)
-#         if function_variable_index(graph) == curr_node
-#             @assert typeof(node_value(edge_value(edge))) != AutomaticDifferentiation.NoDeriv
-#             prod *= edge_value(edge) #this may seem redundant have two `prod *= edge_value(edge)` statements. But the edge value of an edge to a constant has value NoDeriv. Only want to do the multiplication when certain the edge value won't be NoDeriv.
-#             return prod
-#         else
-#             return 0.0 #if leaf node is not the function variable then this path adds nothing to derivative sum
-#         end
-#     else
-#         @assert typeof(node_value(edge_value(edge))) != AutomaticDifferentiation.NoDeriv
-#         prod *= edge_value(edge) #this may seem redundant have two `prod *= edge_value(edge)` statements. But the edge value of an edge to a constant has value NoDeriv. Only want to do the multiplication when certain the edge value won't be NoDeriv.
-#         return sum(_all_paths_derivative.(Ref(graph), child_edges(graph, curr_node), Ref(prod)))
-#     end
-# end
