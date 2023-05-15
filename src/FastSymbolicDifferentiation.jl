@@ -11,16 +11,14 @@ using Statistics
 using RuntimeGeneratedFunctions
 using Logging
 import Base: iterate
-using TimerOutputs
 using UUIDs
+using SparseArrays
+using DataStructures
 module AutomaticDifferentiation
 struct NoDeriv
 end
 export NoDeriv
 end #module
-export AutomaticDifferentiation
-
-const TIMER = TimerOutput()
 
 const INVARIANTS = true
 
@@ -49,7 +47,6 @@ macro safe_infiltrate()
         end
     )
 end
-export safe_infiltrate
 
 RuntimeGeneratedFunctions.init(@__MODULE__)
 

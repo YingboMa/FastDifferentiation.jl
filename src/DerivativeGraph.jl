@@ -78,12 +78,11 @@ struct EdgeRelations{T}
 
     EdgeRelations(T::Type=Int64) = new{T}(PathEdge{T}[], PathEdge{T}[])
 end
-export EdgeRelations
 
 parents(a::EdgeRelations) = a.parents
-export parents
+
 children(a::EdgeRelations) = a.children
-export children
+
 
 """ Creates an ℝⁿ->ℝᵐ expression graph from `m` input DAGs. At creation time a new graph, called the derivative graph, is constructed based on the input DAG's. The derivative graph is destructively modified to compute the Jacobian of the function. The input DAG's are not modified.
 
@@ -174,13 +173,9 @@ export DerivativeGraph
 DerivativeGraph(root::Node) = DerivativeGraph([root]) #convenience constructor for single root functions
 
 nodes(a::DerivativeGraph) = a.nodes
-export nodes
-
 node(a::DerivativeGraph, node_index) = nodes(a)[node_index]
-export node
 
 num_vertices(a::DerivativeGraph) = length(nodes(a))
-export num_vertices
 
 function parents(a::Dict{T,EdgeRelations{T}}, node_index::T) where {T<:Integer}
     nedges = get(a, node_index, nothing)
@@ -191,7 +186,6 @@ function children(a::Dict{T,EdgeRelations{T}}, node_index::T) where {T<:Integer}
     nedges = get(a, node_index, nothing)
     return nedges === nothing ? nothing : UnconstrainedPathIterator(node_index, nedges.children, false)
 end
-export children
 
 """returns iterator of indices of parents of node"""
 parents(a::DerivativeGraph, node_index::T) where {T<:Integer} = parents(edges(a), node_index)
@@ -199,29 +193,22 @@ parents(a::DerivativeGraph, node_index::T) where {T<:Integer} = parents(edges(a)
 
 """returns iterator of indices of children of node"""
 children(a::DerivativeGraph, node_index::T) where {T<:Integer} = children(edges(a), node_index)
-export children
 
 root_path_masks(a::DerivativeGraph) = a.root_path_masks
 variable_path_masks(a::DerivativeGraph) = a.variable_path_masks
 
 each_vertex(a::DerivativeGraph) = 1:length(nodes(a))
-export each_vertex
 roots(a::DerivativeGraph) = a.roots
 export roots
 root(a::DerivativeGraph, root_index::Integer) = roots(a)[root_index]
-export root
 root_index_to_postorder_number(a::DerivativeGraph) = a.root_index_to_postorder_number
-export root_index_to_postorder_number
 root_index_to_postorder_number(a::DerivativeGraph, index::Integer) = root_index_to_postorder_number(a)[index]
 
 root_postorder_to_index(a::DerivativeGraph, index::Integer) = a.root_postorder_to_index[index]
-export root_postorder_to_index
-
-
 
 #These two functions are not efficient, primarily intended for visualization
 is_root(graph::DerivativeGraph, postorder_index::Integer) = get(graph.root_postorder_to_index, postorder_index, nothing) !== nothing
-export is_root
+
 
 function is_root(graph::DerivativeGraph, node::Node)
     num = postorder_number(graph, node)
@@ -233,27 +220,27 @@ function is_root(graph::DerivativeGraph, node::Node)
 end
 
 is_variable(graph::DerivativeGraph, postorder_index::Integer) = postorder_index in keys(graph.variable_postorder_to_index)
-export is_variable
+
 is_variable(graph::DerivativeGraph, node::Node) = is_variable(graph, postorder_number(graph, node))
 
 is_tree(graph::DerivativeGraph, postorder_index::Integer) = length(child_edges(graph, postorder_index)) != 0
 is_tree(graph::DerivativeGraph, node::Node) = is_tree(graph, postorder_number(graph, node))
-export is_tree
+
 
 variables(a::DerivativeGraph) = a.variables
 export variables
 variable(a::DerivativeGraph, variable_index::Integer) = variables(a)[variable_index]
-export variable
+
 variable_index_to_postorder_number(a::DerivativeGraph) = a.variable_index_to_postorder_number
-export variable_index_to_postorder_number
+
 variable_index_to_postorder_number(a::DerivativeGraph, index::Integer) = get(variable_index_to_postorder_number(a), index, nothing)
 
 variable_postorder_to_index(a::DerivativeGraph, index) = get(a.variable_postorder_to_index, index, nothing)
-export variable_postorder_to_index
+
 
 
 postorder_number(a::DerivativeGraph, node::Node) = get(a.postorder_number, node, nothing)
-export postorder_number
+
 
 function variable_node_to_index(a::DerivativeGraph, vnode::Node)
     pnum = postorder_number(a, vnode)
@@ -263,10 +250,9 @@ function variable_node_to_index(a::DerivativeGraph, vnode::Node)
         return variable_postorder_to_index(a, pnum)
     end
 end
-export variable_node_to_index
 
 edges(a::DerivativeGraph) = a.edges
-export edges
+
 
 """returns edges that directly connect top_vert and bott_vert"""
 function edges(a::DerivativeGraph, vert1::Integer, vert2::Integer)
@@ -292,42 +278,50 @@ function unique_edges(a::DerivativeGraph)
     end
     return edges_unique
 end
-export unique_edges
+
 
 
 _node_edges(edge_map::Dict{T,EdgeRelations{T}}, node_index::T) where {T<:Integer} = get(edge_map, node_index, nothing)
 
 node_edges(a::DerivativeGraph, node::Node) = _node_edges(edges(a), postorder_number(a, node)) #if the node doesn't exist in the graph return nothing rather than throwing exception. 
 node_edges(a::DerivativeGraph, node_index::Integer) = _node_edges(edges(a), node_index)
-export node_edges
+
 # node_edges(a::RnToRmGraph, node_index::Integer) = get(a.edges, node_index, nothing) #if the node doesn't exist in the graph return nothing rather than throwing exception. 
 # #version that doesn't require having the entire graph constructed
 
 function reachable_variables(a::DerivativeGraph, node_index::Integer)
-    node_edges = children(edges(a)[node_index])
-    path_mask = falses(domain_dimension(a))
-    for edge in node_edges
-        path_mask .= path_mask .| reachable_variables(edge)
-    end
+    if get(edges(a), node_index, nothing) === nothing
+        return falses(domain_dimension(a))
+    else
+        node_edges = children(edges(a)[node_index])
+        path_mask = falses(domain_dimension(a))
+        for edge in node_edges
+            path_mask .= path_mask .| reachable_variables(edge)
+        end
 
-    if is_variable(a, node_index) #if node index is a variable then need to set its variable bit. No edge will have node_index as the top_vertex so the bit won't be set in the previous code.
-        path_mask[variable_postorder_to_index(a, node_index)] = 1
+        if is_variable(a, node_index) #if node index is a variable then need to set its variable bit. No edge will have node_index as the top_vertex so the bit won't be set in the previous code.
+            path_mask[variable_postorder_to_index(a, node_index)] = 1
+        end
+        return path_mask
     end
-    return path_mask
 end
 
 function reachable_roots(a::DerivativeGraph, node_index::Integer)
-    node_edges = parents(edges(a)[node_index])
-    path_mask = falses(codomain_dimension(a))
-    for edge in node_edges
-        path_mask .= path_mask .| reachable_roots(edge)
-    end
+    if get(edges(a), node_index, nothing) === nothing
+        return falses_codomain_dimension(a)
+    else
+        node_edges = parents(edges(a)[node_index])
+        path_mask = falses(codomain_dimension(a))
+        for edge in node_edges
+            path_mask .= path_mask .| reachable_roots(edge)
+        end
 
-    #If node is a root then no edges will have it as a bott_vertex. A root is reachable from itself.
-    if is_root(a, node_index) #if node_index is a root then need to set its reachable bit
-        path_mask[root_postorder_to_index(a, node_index)] = 1
+        #If node is a root then no edges will have it as a bott_vertex. A root is reachable from itself.
+        if is_root(a, node_index) #if node_index is a root then need to set its reachable bit
+            path_mask[root_postorder_to_index(a, node_index)] = 1
+        end
+        return path_mask
     end
-    return path_mask
 end
 
 
@@ -339,6 +333,7 @@ export domain_dimension
 dimensions(a::DerivativeGraph) = (domain_dimension(a), codomain_dimension(a))
 export dimensions
 
+"""Computes the average number of reachable variables across all the edges in the graph. Primarily useful for development."""
 function mean_reachable_variables(a::DerivativeGraph)
     total = 0
     num_edges = 0
@@ -349,12 +344,11 @@ function mean_reachable_variables(a::DerivativeGraph)
     end
     return 0.5 * total / num_edges #halve the result to account for 2x redundancy of edges
 end
-export mean_reachable_variables
 
 function fraction_reachable_variables(a::DerivativeGraph)
     return mean_reachable_variables(a) / domain_dimension(a)
 end
-export fraction_reachable_variables
+
 
 #these functions implicitly assume the nodes are postorder numbered. Parent nodes will have higher numbers than children nodes. Vertices in PathEdge are sorted with highest number first. These are inefficient since the filtering happens at every access. Change to fixed parent, child fields if this is too slow.
 """Returns a vector of edges which satisfy `edge.top_vertex == node_index`. These edges lead to the children of `node_index`."""
@@ -366,7 +360,6 @@ function child_edges(dgraph::DerivativeGraph, node_index::T) where {T<:Integer}
         return PathEdge{T}[] #seems wasteful to return an empty array but other code depends on a zero length return rather than nothing.
     end
 end
-export child_edges
 
 function child_edges(dgraph::DerivativeGraph{T}, node::Node) where {T}
     num = postorder_number(dgraph, node)
@@ -389,7 +382,7 @@ function parent_edges(dgraph::DerivativeGraph, node_index::T) where {T<:Integer}
         return PathEdge{T}[] #seems wasteful to return an empty array but other code depends on a zero length return rather than nothing.
     end
 end
-export parent_edges
+
 
 parent_edges(dgraph::DerivativeGraph, e::PathEdge) = parent_edges(dgraph, top_vertex(e))
 
@@ -405,9 +398,9 @@ end
 
 #put this function here because it requires child_edges to be defined before it in the file. And child edges has a dependency on _node_edges so it shouldn't move up.
 is_constant(graph::DerivativeGraph, postorder_index::Integer) = is_constant(node(graph, postorder_index))
-export is_constant
+
 partial_value(dgraph::DerivativeGraph, parent::Node, child_index::T) where {T<:Integer} = value(child_edges(dgraph, parent)[child_index])
-export partial_value
+
 
 """Computes partial values for all edges in the graph"""
 function _partial_edges(postorder_number::IdDict{Node,Int64}, visited::IdDict{Node,Bool}, current_node::Node{T,N}, edges::Dict{Int64,EdgeRelations{Int64}}, expression_cache::IdDict{Any,Any}, domain_dim, codomain_dim) where {T,N}
@@ -474,9 +467,6 @@ function edge_exists(graph::DerivativeGraph, edge::PathEdge)
 
     return val1 && val2
 end
-
-export edge_exists
-
 
 
 """Adds an edge to the graph"""
@@ -547,7 +537,6 @@ function delete_edge!(graph::DerivativeGraph, edge::PathEdge, force::Bool=false)
 
     return nothing
 end
-export delete_edge!
 
 make_function(graph::DerivativeGraph) = make_function(graph, variables(graph))
 
@@ -577,7 +566,20 @@ function make_function(graph::DerivativeGraph, variable_order::AbstractVector{S}
 end
 export make_function
 
+"""Computes sparsity of Jacobian matrix = non_zero_entries/total_entries."""
+function sparsity(graph::DerivativeGraph)
+    total_entries = codomain_dimension(graph) * domain_dimension(graph)
+    non_zero = 0
+    for i in eachindex(roots(graph))
+        non_zero += sum(reachable_variables(graph, root_index_to_postorder_number(graph, i)))
+    end
+    return non_zero / total_entries
+end
+export sparsity
+
+"""Computes statistics of DerivativeGraph. Primarily useful for debugging or development."""
 function graph_statistics(graph::DerivativeGraph)
+    # throw(ErrorException("this code is modifying the graph. It shouldn't. Don't use till fixed"))
     @info "num nodes $(length(nodes(graph))) num roots $(codomain_dimension(graph)) num variables $(domain_dimension(graph))"
 
     avg_reach_roots = mean(sum.(reachable_roots.(Iterators.flatten(parents.(values(edges(graph)))))))
@@ -603,7 +605,7 @@ function graph_statistics(graph::DerivativeGraph)
                 if length(parents(edges)) == 0 || length(parents(edges)) == 1
                     shared_roots .= 0
                 else
-                    shared_roots = reachable_roots(parents(edges)[1])
+                    shared_roots = copy(reachable_roots(parents(edges)[1]))
 
                     for pedge in parents(edges) #poetntially redundant computation but efficiency not important
                         shared_roots .&= reachable_roots(pedge)
@@ -613,7 +615,7 @@ function graph_statistics(graph::DerivativeGraph)
                 if length(children(edges)) == 0 || length(children(edges)) == 1
                     shared_variables .= 0
                 else
-                    shared_variables = reachable_variables(children(edges)[1])
+                    shared_variables = copy(reachable_variables(children(edges)[1]))
                     for cedge in children(edges)
                         shared_variables .&= reachable_variables(cedge)
                     end
@@ -625,6 +627,9 @@ function graph_statistics(graph::DerivativeGraph)
         end
     end
     @info "$branch_nodes nodes have branches out of a total of $(length(nodes(graph))) nodes"
+    @info "sparsity of Jacobian $(sparsity(graph))"
 end
-export graph_statistics
+
+
+
 

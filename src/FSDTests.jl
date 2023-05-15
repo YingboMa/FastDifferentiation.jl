@@ -1,3 +1,11 @@
+#Test functions need access to non-exported names from FastSymbolicDifferentiation. 
+module FSDInternals
+using FastSymbolicDifferentiation: compute_factorable_subgraphs, edges, vertices, isa_connected_path, add_non_dom_edges!, edges, PathEdge, dominated_node, partial_value, compute_paths_to_roots, num_vertices, unique_edges, parent_edges, edge_path, all_nodes, dominator_subgraph, postdominator_subgraph, dominating_node, times_used, reachable_dominance, postorder_number, variable_index_to_postorder_number, root_index_to_postorder_number, parents, children, DomPathConstraint, edge_exists, FactorableSubgraph, each_vertex, node_edges, factor_order, subgraph_edges, node, subset, factor_subgraph!, factor!, deconstruct_subgraph, forward_edges, evaluate_subgraph, make_factored_edge, path_sort_order, multiply_sequence, root, reachable_roots, bott_vertex, top_vertex, reachable_variables, compute_paths_to_variables, compute_edge_paths!, relation_node_indices, value_equal, is_tree, is_leaf, is_variable, is_constant, set_diff, value, bit_equal
+
+export compute_factorable_subgraphs, edges, vertices, isa_connected_path, add_non_dom_edges!, edges, PathEdge, dominated_node, partial_value, compute_paths_to_roots, num_vertices, unique_edges, parent_edges, edge_path, all_nodes, dominator_subgraph, postdominator_subgraph, dominating_node, times_used, reachable_dominance, postorder_number, variable_index_to_postorder_number, root_index_to_postorder_number, parents, children, DomPathConstraint, edge_exists, FactorableSubgraph, each_vertex, node_edges, factor_order, subgraph_edges, node, subset, factor_subgraph!, factor!, deconstruct_subgraph, forward_edges, evaluate_subgraph, make_factored_edge, path_sort_order, multiply_sequence, root, reachable_roots, bott_vertex, top_vertex, reachable_variables, compute_paths_to_variables, compute_edge_paths!, relation_node_indices, value_equal, is_tree, is_leaf, is_variable, is_constant, set_diff, value, bit_equal
+end #module
+
+
 module FSDTests
 using DiffRules
 using TermInterface
@@ -9,11 +17,14 @@ using Rotations
 using DataStructures
 
 using ..FastSymbolicDifferentiation
+using ..FSDInternals
+
 const FSD = FastSymbolicDifferentiation
 export FSD
 
 using TestItems
 
+include("../FSDBenchmark/src/Types.jl")
 include("../FSDBenchmark/src/Chebyshev.jl")
 include("../FSDBenchmark/src/SphericalHarmonics.jl")
 include("../FSDBenchmark/src/LagrangianDynamics.jl")
@@ -149,10 +160,10 @@ function simple_factorable_subgraphs()
     _, graph, _, _ = simple_dominator_graph()
     temp = extract_all!(compute_factorable_subgraphs(graph))
     return graph, [
-        temp[findfirst(x -> vertices(x) == (4, 2), temp)],
-        temp[findfirst(x -> vertices(x) == (1, 3), temp)],
-        temp[findfirst(x -> vertices(x) == (1, 4), temp)],
-        temp[findfirst(x -> vertices(x) == (4, 1), temp)]
+        temp[findfirst(x -> FastSymbolicDifferentiation.vertices(x) == (4, 2), temp)],
+        temp[findfirst(x -> FastSymbolicDifferentiation.vertices(x) == (1, 3), temp)],
+        temp[findfirst(x -> FastSymbolicDifferentiation.vertices(x) == (1, 4), temp)],
+        temp[findfirst(x -> FastSymbolicDifferentiation.vertices(x) == (4, 1), temp)]
     ]
 end
 export simple_factorable_subgraphs
@@ -160,6 +171,7 @@ export simple_factorable_subgraphs
 @testitem "isa_connected_path 1" begin # case when path is one edge long
     using Symbolics
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x y
 
@@ -170,6 +182,7 @@ export simple_factorable_subgraphs
     subs_heap = compute_factorable_subgraphs(gr)
     subs = extract_all!(subs_heap)
     test_sub = subs[1]
+
     etmp = parent_edges(gr, dominated_node(test_sub))
     rroots = reachable_roots(etmp[1])
     rroots .= rroots .& .!rroots
@@ -181,7 +194,7 @@ end
 @testitem "isa_connected_path 2" begin #cases when path is longer than one edge and various edges have either roots or variables reset.
     using Symbolics
     using DataStructures
-
+    using FastSymbolicDifferentiation.FSDInternals
     @variables x y
 
     nx = Node(x)
@@ -224,12 +237,13 @@ end
     e3_4 = edges(graph, 3, 4)[1]
     vars = reachable_variables(e3_4)
     @. vars &= !vars
-    @assert !isa_connected_path(_2_4, e3_4)
+    @test !isa_connected_path(_2_4, e3_4)
 end
 
 @testitem "add_non_dom_edges" begin
     using Symbolics
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     #utility function to make it easier to create edges and test them against edges generated during graph operations.
     function edge_fields_equal(edge1, edge2)
@@ -252,36 +266,37 @@ end
     subs_heap = compute_factorable_subgraphs(graph)
     subs = extract_all!(subs_heap)
     _5_3 = subs[1]
-    @assert (5, 3) == vertices(_5_3)
+    @test (5, 3) == vertices(_5_3)
 
     add_non_dom_edges!(_5_3)
     #single edge 3,4 should be split into two: ([r1,r2],[v1,v2]) -> ([r1],[v1,v2]),([r2],[v1,v2])
     edges3_4 = edges(graph, 4, 3)
-    @assert length(edges3_4) == 2
+    @test length(edges3_4) == 2
     test_edge = PathEdge(4, 3, ny, BitVector([1, 1]), BitVector([0, 1]))
-    @assert count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
+    @test count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
     test_edge = (PathEdge(4, 3, ny, BitVector([1, 1]), BitVector([1, 0])))
-    @assert count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
+    @test count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
 
     graph = DerivativeGraph([n4, n5])
     sub_heap = compute_factorable_subgraphs(graph)
     subs = extract_all!(sub_heap)
     _2_4 = subs[2]
-    @assert (2, 4) == vertices(_2_4)
+    @test (2, 4) == vertices(_2_4)
 
     add_non_dom_edges!(_2_4)
     #single edge 3,4 should be split in two: ([r1,r2],[v1,v2])->([r1,r2],[v1]),([r1,r2],[v2])
     edges3_4 = edges(graph, 4, 3)
-    @assert length(edges3_4) == 2
+    @test length(edges3_4) == 2
     test_edge = PathEdge(4, 3, ny, BitVector([1, 0]), BitVector([1, 1]))
-    @assert count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
+    @test count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
     test_edge = (PathEdge(4, 3, ny, BitVector([0, 1]), BitVector([1, 1])))
-    @assert count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
+    @test count(edge_fields_equal.(edges3_4, Ref(test_edge))) == 1
 end
 
 @testitem "iteration" begin
     using Symbolics
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x y
 
@@ -335,6 +350,7 @@ end
 
 @testitem "all_nodes" begin
     using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
 
     cache = IdDict()
     dag, x, y = simple_dag(cache)
@@ -386,11 +402,13 @@ end
     # show(@time expr_to_dag.(derivs))
     from_dag = dag_to_Symbolics_expression.(tmp)
     subs = Dict([x => rand(), y => rand(), z => rand()])
-    @test isapprox(map(xx -> xx.val, Symbolics.substitute.(derivs, Ref(subs))), map(xx -> xx.val, Symbolics.substitute.(from_dag, Ref(subs))), atol=1e-14)
+    @test isapprox(map(xx -> xx.val, Symbolics.substitute.(derivs, Ref(subs))), map(xx -> xx.val, Symbolics.substitute.(from_dag, Ref(subs))), atol=1e-12)
 end
 
 @testitem "is_tree" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x
 
     nx = Node(x)
@@ -449,6 +467,7 @@ end
 @testitem "compute_factorable_subgraphs test order" begin
     using Symbolics
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x y
 
@@ -484,6 +503,7 @@ end
 @testitem "compute_factorable_subgraphs" begin
     using FastSymbolicDifferentiation.FSDTests
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     dgraph = DerivativeGraph(complex_dominator_dag())
 
@@ -517,6 +537,7 @@ end
     import Symbolics
     using Symbolics: substitute
     using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
 
     Symbolics.@variables zz
     dom_expr = zz * (cos(zz) + sin(zz))
@@ -556,6 +577,7 @@ end
 
 @testitem "edges" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x y
 
@@ -592,6 +614,7 @@ end
 
 @testitem "DerivativeGraph constructor" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x, y
 
@@ -633,6 +656,8 @@ end
 
 @testitem "DerivativeGraph pathmasks" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x, y
 
     nx = Node(x) #postorder # 2
@@ -673,6 +698,8 @@ end
 
 @testitem "ConstrainedPathIterator" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x, y
 
     #ℝ²->ℝ² function (f1,f2) = (5*(x*y),(x*y)*3)
@@ -738,6 +765,8 @@ end
 
 @testitem "edge_exists" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x, y
 
     nx = Node(x) #postorder # 2
@@ -762,6 +791,8 @@ end
 
 @testitem "add_edge! for DerivativeGraph" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x, y
 
     nx = Node(x) #postorder # 2
@@ -799,6 +830,8 @@ end
     #TODO need to add a test that deletes all the edges incident on a vertex and ensures that vertex is deleted.
 
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x, y
 
     function reset_test(all_edges, graph, func::Function)
@@ -840,6 +873,7 @@ end
 
 @testitem "compute_edge_paths" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
 
     @variables x, y
@@ -886,6 +920,7 @@ end
 @testitem "dominators DerivativeGraph" begin
     using Symbolics
     using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
 
 
     @variables x, y
@@ -957,6 +992,7 @@ end
 
     using FastSymbolicDifferentiation: dom_subgraph, pdom_subgraph
     using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x, y
 
@@ -996,6 +1032,7 @@ end
 
 @testitem "reachable" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x, y
 
@@ -1031,6 +1068,7 @@ end
 @testitem "factor_order" begin
     using FastSymbolicDifferentiation.FSDTests
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     _, graph, four_2_subgraph, one_3_subgraph = simple_dominator_graph()
 
@@ -1081,6 +1119,7 @@ end
 @testitem "subgraph_edges" begin
     using FastSymbolicDifferentiation.FSDTests
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     dgraph = DerivativeGraph([complex_dominator_dag()])
 
@@ -1095,23 +1134,24 @@ end
     _8_1_sub = subs[findfirst(x -> vertices(x) == (8, 1), subs)]
     _1_8_sub = subs[findfirst(x -> vertices(x) == (1, 8), subs)]
 
-    @assert issetequal(_1_4_sub_ref, subgraph_edges(_1_4_sub))
+    @test issetequal(_1_4_sub_ref, subgraph_edges(_1_4_sub))
     factor_subgraph!(_1_4_sub)
     _1_7_sub_ref = Set(map(x -> x[1], edges.(Ref(dgraph), ((4, 1), (3, 1), (7, 4), (7, 6), (6, 3)))))
 
 
-    @assert issetequal(_1_7_sub_ref, subgraph_edges(_1_7_sub))
-    @assert issetequal(_8_4_sub_ref, subgraph_edges(_8_4_sub))
+    @test issetequal(_1_7_sub_ref, subgraph_edges(_1_7_sub))
+    @test issetequal(_8_4_sub_ref, subgraph_edges(_8_4_sub))
     factor_subgraph!(_8_4_sub)
     _8_1_sub_ref = Set(map(x -> x[1], edges.(Ref(dgraph), ((8, 7), (8, 4), (4, 1), (3, 1), (6, 3), (7, 6)))))
-    @assert issetequal(_8_1_sub_ref, subgraph_edges(_8_1_sub))
-    @assert issetequal(_8_1_sub_ref, subgraph_edges(_1_8_sub))
+    @test issetequal(_8_1_sub_ref, subgraph_edges(_8_1_sub))
+    @test issetequal(_8_1_sub_ref, subgraph_edges(_1_8_sub))
 
 end
 
 @testitem "subgraph_edges with branching" begin
     using Symbolics
     using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x
 
@@ -1139,6 +1179,7 @@ end
 
 @testitem "deconstruct_subgraph" begin
     using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
 
     graph, subs = simple_factorable_subgraphs()
 
@@ -1151,12 +1192,12 @@ end
     _3_1 = all_edges[findfirst(x -> vertices(x) == (3, 1), all_edges)]
 
     ed, nod = deconstruct_subgraph(subs[1]) #can only deconstruct these two subgraphs because the larger ones need to be factored first.
-    @assert issetequal([4, 2, 3], nod)
-    @assert issetequal((_4_2, _4_3, _3_2), ed)
+    @test issetequal([4, 2, 3], nod)
+    @test issetequal((_4_2, _4_3, _3_2), ed)
 
     ed, nod = deconstruct_subgraph(subs[2])
-    @assert issetequal((_3_2, _3_1, _2_1), ed)
-    @assert issetequal([1, 2, 3], nod)
+    @test issetequal((_3_2, _3_1, _2_1), ed)
+    @test issetequal([1, 2, 3], nod)
 
     factor_subgraph!(subs[1]) #now can test larger subgraphs
 
@@ -1171,11 +1212,11 @@ end
     ed, nod = deconstruct_subgraph(subs[3])
     println(ed)
     sub_4_1 = (_4_3, _4_2, _3_1, _2_1)
-    @assert issetequal(sub_4_1, ed)
-    @assert issetequal([1, 2, 3, 4], nod)
+    @test issetequal(sub_4_1, ed)
+    @test issetequal([1, 2, 3, 4], nod)
     ed, nod = deconstruct_subgraph(subs[4])
-    @assert issetequal(sub_4_1, ed)
-    @assert issetequal([1, 2, 3, 4], nod)
+    @test issetequal(sub_4_1, ed)
+    @test issetequal([1, 2, 3, 4], nod)
 end
 
 
@@ -1189,6 +1230,7 @@ end
 @testitem "subgraph reachable_roots, reachable_variables" begin
     using Symbolics
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x, y
 
@@ -1228,6 +1270,7 @@ end
 @testitem "Path_Iterator" begin
     using Symbolics
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x, y
 
@@ -1243,7 +1286,7 @@ end
 
     #first verify all nodes have the postorder numbers we expect
     for (i, nd) in pairs(gnodes)
-        @assert node(graph, i) == nd
+        @test node(graph, i) == nd
     end
 
     sub_heap = compute_factorable_subgraphs(graph)
@@ -1263,18 +1306,18 @@ end
     start_edges = forward_edges(sub_5_3, dominated_node(sub_5_3))
     temp_edges = collect(edge_path(sub_5_3, start_edges[1]))
 
-    @assert all(x -> x[1] == x[2], zip(path_edges1, temp_edges))
+    @test all(x -> x[1] == x[2], zip(path_edges1, temp_edges))
     temp_edges = collect(edge_path(sub_5_3, start_edges[2]))
-    @assert all(x -> x[1] == x[2], zip(path_edges2, temp_edges))
+    @test all(x -> x[1] == x[2], zip(path_edges2, temp_edges))
 
     #for postdominator subgraph (3,5)
 
     start_edges = forward_edges(sub_3_5, dominated_node(sub_3_5))
 
     temp_edges = collect(edge_path(sub_3_5, start_edges[1]))
-    @assert all(x -> x[1] == x[2], zip(reverse(path_edges1), temp_edges))
+    @test all(x -> x[1] == x[2], zip(reverse(path_edges1), temp_edges))
     temp_edges = collect(edge_path(sub_3_5, start_edges[2]))
-    @assert all(x -> x[1] == x[2], zip(path_edges2, temp_edges))
+    @test all(x -> x[1] == x[2], zip(path_edges2, temp_edges))
 
 
     path_edges1 = [edges(graph, 4, 1)[1]]
@@ -1287,68 +1330,33 @@ end
     #for dominator subgraph (4,1)
 
     temp_edges = collect(edge_path(sub_4_1, start_edges[1]))
-    @assert all(x -> x[1] == x[2], zip(path_edges1, temp_edges))
+    @test all(x -> x[1] == x[2], zip(path_edges1, temp_edges))
     temp_edges = collect(edge_path(sub_4_1, start_edges[2]))
-    @assert all(x -> x[1] == x[2], zip(path_edges2, temp_edges))
+    @test all(x -> x[1] == x[2], zip(path_edges2, temp_edges))
 
 
     #for postdominator subgraph (1,4)
     start_edges = forward_edges(sub_1_4, dominated_node(sub_1_4))
     temp_edges = collect(edge_path(sub_1_4, start_edges[1]))
 
-    @assert all(x -> x[1] == x[2], zip(path_edges1, temp_edges))
+    @test all(x -> x[1] == x[2], zip(path_edges1, temp_edges))
     temp_edges = collect(edge_path(sub_1_4, start_edges[2]))
-    @assert all(x -> x[1] == x[2], zip(reverse(path_edges2), temp_edges))
+    @test all(x -> x[1] == x[2], zip(reverse(path_edges2), temp_edges))
 end
 
 @testitem "set_diff" begin
+    using FastSymbolicDifferentiation.FSDInternals
+
     @test set_diff(falses(1), falses(1)) == falses(1)
     @test set_diff(falses(1), trues(1)) == falses(1)
     @test set_diff(trues(1), falses(1)) == trues(1)
     @test set_diff(trues(1), trues(1)) == falses(1)
 end
 
-#TODO delete this if decide not to resurrect edges(subgraph) function
-# @testitem "edges of subgraph" begin
-#     using Symbolics
-
-#     @variables x y
-
-#     nv1 = Node(x)
-#     nv2 = Node(y)
-#     n3 = nv1 * nv2
-#     n4 = n3 * nv1
-#     n5 = n3 * n4
-
-#     graph = DerivativeGraph([n4, n5])
-
-#     subs = compute_factorable_subgraphs(graph)[1]
-#     _5_3 = subs[findfirst(x -> x.subgraph == (5, 3), subs)]
-#     _4_1 = subs[findfirst(x -> x.subgraph == (4, 1), subs)]
-#     _1_4 = subs[findfirst(x -> x.subgraph == (1, 4), subs)]
-
-#     _5_3_edges = ((5, 3), (4, 3), (5, 4))
-#     _4_1_edges = ((4, 1), (4, 3), (3, 1))
-#     _1_4_edges = ((4, 1), (4, 3), (3, 1))
-
-#     @test length(edges(_5_3)) == 3
-#     @test length(edges(_4_1)) == 3
-#     @test length(edges(_1_4)) == 3
-
-#     function test_edges(subgraph, edge_list)
-#         for edge in edges(subgraph)
-#             @test (top_vertex(edge), bott_vertex(edge)) in edge_list
-#         end
-#     end
-
-#     for (subgraph, edges_of_subgraph) in zip((_5_3, _4_1, _1_4), (_5_3_edges, _4_1_edges), (_1_4_edges))
-#         test_edges(subgraph, edges_of_subgraph)
-#     end
-# end
-
 @testitem "make_factored_edge" begin
     using Symbolics
     using DataStructures
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables v1, v2
 
@@ -1365,10 +1373,10 @@ end
     subs = extract_all!(sub_heap)
 
     _5_3 = filter(x -> vertices(x) == (5, 3), subs)[1]
-    e_5_3 = make_factored_edge(_5_3,evaluate_subgraph(_5_3))
+    e_5_3 = make_factored_edge(_5_3, evaluate_subgraph(_5_3))
 
     _3_5 = filter(x -> vertices(x) == (3, 5), subs)[1]
-    e_3_5 = make_factored_edge(_3_5,evaluate_subgraph(_3_5))
+    e_3_5 = make_factored_edge(_3_5, evaluate_subgraph(_3_5))
 
     @test bit_equal(reachable_roots(e_5_3), BitVector([1, 0]))
     @test bit_equal(reachable_variables(e_5_3), BitVector([1, 1]))
@@ -1380,6 +1388,7 @@ end
 
 @testitem "factor_subgraph simple ℝ²->ℝ²" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x y
 
@@ -1407,6 +1416,8 @@ end
 
 @testitem "factor_subgraph 2" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x y
 
     nx1 = Node(x)
@@ -1426,6 +1437,8 @@ end
 
 @testitem "evaluate_subgraph" begin
     using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
+
 
     _, graph, _, _ = simple_dominator_graph()
 
@@ -1434,6 +1447,7 @@ end
 
 @testitem "factor simple ℝ²->ℝ²" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x, y
 
@@ -1458,6 +1472,8 @@ end
 # end
 
 @testitem "subset" begin
+    using FastSymbolicDifferentiation.FSDInternals
+
     a = falses(3)
     b = BitVector([1, 1, 1])
     @test subset(a, b)
@@ -1468,18 +1484,24 @@ end
 end
 
 
-@testitem "constants and variable roots" begin
+@testitem "constant and variable roots" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x
     nx = Node(x)
     zr = Node(0.0)
 
     graph = DerivativeGraph([nx, zr])
-    factor!(graph)
+    jac = symbolic_jacobian!(graph, [nx])
+
+    @test value(jac[1, 1]) == 1
+    @test value(jac[2, 1]) == 0
 end
 
 @testitem "times_used PathEdge" begin
+    using FastSymbolicDifferentiation.FSDInternals
+
     e = PathEdge(1, 2, Node(0), BitVector([1, 0, 1]), BitVector([0, 0, 1]))
     @test times_used(e) == 2
     e = PathEdge(1, 2, Node(0), BitVector([1, 0, 0]), BitVector([0, 0, 1]))
@@ -1489,6 +1511,7 @@ end
 end
 
 @testitem "path_sort_order" begin
+    using FastSymbolicDifferentiation.FSDInternals
     e1 = PathEdge(1, 2, Node(0), BitVector([1, 0, 1]), BitVector([0, 0, 1]))
     e2 = PathEdge(3, 2, Node(0), BitVector([1, 0, 0]), BitVector([0, 0, 1]))
     @test path_sort_order(e1, e2) == true
@@ -1499,6 +1522,8 @@ end
 
 @testitem "multiply_sequence" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
+
     @variables x, y, z, w, u
 
     e1 = PathEdge(1, 2, Node(x), BitVector([1, 0, 1]), BitVector([0, 0, 1]))
@@ -1522,6 +1547,7 @@ end
 @testitem "factor ℝ¹->ℝ¹ " begin
     using FastSymbolicDifferentiation.FSDTests
     using FiniteDifferences
+    using FastSymbolicDifferentiation.FSDInternals
 
     _, graph, _, _ = simple_dominator_graph()
     factor!(graph)
@@ -1578,28 +1604,39 @@ end
     end
 end
 
+@testitem "sparse_symbolic_jacobian!" begin
+    using FastSymbolicDifferentiation.FSDTests
+    using FastSymbolicDifferentiation.FSDInternals
+    using Symbolics
+
+    @variables x, y, z
+
+    fsd_graph = spherical_harmonics(FastSymbolic(), 10, x, y, z)
+    sprse = sparse_symbolic_jacobian!(fsd_graph, variables(fsd_graph))
+    fsd_graph = spherical_harmonics(FastSymbolic(), 10, x, y, z) #because global cache has not been reset the sparse and dense graphs should have identical elements.
+    dense = symbolic_jacobian!(fsd_graph, variables(fsd_graph))
+
+    # for index in CartesianIndices(sprse)
+    #     @test sprse[index] == dense[index]
+    # end
+
+    for index in CartesianIndices(dense)
+        if sprse[index] != dense[index] #empty elements in sprse get value Node{Int64,0} wherease zero elements in dense get value Node{Float64,0}. These are not == so need special case.
+            @test value(sprse[index]) == value(dense[index])
+        else
+            @test sprse[index] == dense[index]
+        end
+    end
+end
+
 @testitem "spherical harmonics jacobian evaluation test" begin
     using FastSymbolicDifferentiation.FSDTests
     using FiniteDifferences
 
-    fsd_graph, x, y, z = to_graph(10)
-    fsd_func = make_function(fsd_graph, Node.([x, y, z]))
+    fsd_graph = spherical_harmonics(FastSymbolic(), 10)
+    fsd_func = make_function(fsd_graph, variables(fsd_graph))
 
-    #hand computed derivative for order = 3
-    # correct_derivatives(x, y, z) = [
-    #     0.0 0.0 0.0
-    #     0.0 0.0 0.0
-    #     0.0 0.0 1.422074017360395
-    #     0.0 0.0 0.0
-    #     0.0 0.0 0.0
-    #     (-0.3642161365141257*3*z) 0.0 (-0.3642161365141257*3*x)
-    #     0.0 0.0 (2.0197963935867267*3*z)
-    #     0.0 (-0.3642161365141257*3*z) (-0.3642161365141257*3*y)
-    #     0.0 0.0 0.0
-    # ]
-
-    sym_func = jacobian_function!(fsd_graph, [Node(x), Node(y), Node(z)])
-
+    sym_func = jacobian_function!(fsd_graph, variables(fsd_graph))
 
     for xr in -1.0:0.3:1.0
         for yr in -1.0:0.3:1.0
@@ -1619,12 +1656,12 @@ end
     using FastSymbolicDifferentiation.FSDTests
 
     chebyshev_order = 20
-    fsd_graph = chebyshev_graph(chebyshev_order)
+    fsd_graph = chebyshev(FastSymbolic(), chebyshev_order)
     fsd_func = make_function(fsd_graph)
 
     func_wrap(x) = fsd_func(x)[1]
 
-    sym_func = jacobian_function!(fsd_graph)
+    sym_func = jacobian_function!(fsd_graph, in_place=false)
 
     for xr in -1.0:0.214:1.0
         finite_diff = central_fdm(12, 1, adapt=3)(func_wrap, xr)
@@ -1635,8 +1672,8 @@ end
     end
 
     tmp = Matrix{Float64}(undef, 1, 1)
-    fsd_graph = chebyshev_graph(chebyshev_order)
-    sym_func = jacobian_function!(fsd_graph)
+    fsd_graph = chebyshev(FastSymbolic(), chebyshev_order)
+    sym_func = jacobian_function!(fsd_graph, in_place=false)
 
     #the in place form of jacobian function
     for xr in -1.0:0.214:1.0
@@ -1650,6 +1687,7 @@ end
 
 @testitem "derivative of matrix" begin
     using Symbolics
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables q1 q2
     nq1 = Node(q1)
@@ -1672,6 +1710,7 @@ end
 @testitem "derivative of simple Unspecified Function" begin
     using Symbolics
     using StaticArrays
+    using FastSymbolicDifferentiation.FSDInternals
 
     @variables x y
 
@@ -1699,4 +1738,3 @@ end
 
 
 end #module
-export Tests

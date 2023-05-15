@@ -107,12 +107,9 @@ end
 
 struct FactorOrder <: Base.Order.Ordering
 end
-export FactorOrder
 
 Base.lt(::FactorOrder, a, b) = factor_order(a, b)
 Base.isless(::FactorOrder, a, b) = factor_order(a, b)
-
-
 
 
 """returns true if a should be sorted before b"""
@@ -132,10 +129,10 @@ function factor_order(a::FactorableSubgraph, b::FactorableSubgraph)
         end
     end
 end
-export factor_order
+
 
 sort_in_factor_order!(a::AbstractVector{T}) where {T<:FactorableSubgraph} = sort!(a, lt=factor_order)
-export sort_in_factor_order!
+
 
 
 """
@@ -223,7 +220,7 @@ function compute_factorable_subgraphs(graph::DerivativeGraph{T}) where {T}
 
     return result
 end
-export compute_factorable_subgraphs
+
 
 function multiply_sequence(path::AbstractVector{S}) where {S<:PathEdge}
     if length(path) == 1
@@ -260,7 +257,7 @@ function multiply_sequence(path::AbstractVector{S}) where {S<:PathEdge}
     end
     return prod
 end
-export multiply_sequence
+
 
 
 function path_sort_order(x, y)
@@ -272,7 +269,7 @@ function path_sort_order(x, y)
         return top_vertex(x) > top_vertex(y)
     end
 end
-export path_sort_order
+
 
 const EDGE_CACHE = Vector{PathEdge{Int64}}[]
 peak_cache_size = 0
@@ -338,8 +335,6 @@ function old_edge_path(next_node_constraint, dominating::T, is_dominator::Bool, 
 
     return flag_value, result, roots_reach, vars_reach
 end
-export old_edge_path
-
 
 function evaluate_subgraph(subgraph::FactorableSubgraph{T,S}) where {T,S<:Union{DominatorSubgraph,PostDominatorSubgraph}}
     constraint = next_edge_constraint(subgraph)
@@ -364,21 +359,18 @@ function evaluate_subgraph(subgraph::FactorableSubgraph{T,S}) where {T,S<:Union{
     reclaim_edge_vector(rel_edges)
     return sum
 end
-export evaluate_subgraph
 
 function make_factored_edge(subgraph::FactorableSubgraph{T,DominatorSubgraph}, sum::Node) where {T}
     roots_reach = copy(reachable_dominance(subgraph))
     vars_reach = copy(reachable_variables(subgraph))
     return PathEdge(dominating_node(subgraph), dominated_node(subgraph), sum, vars_reach, roots_reach)
 end
-export make_factored_edge
 
 function make_factored_edge(subgraph::FactorableSubgraph{T,PostDominatorSubgraph}, sum::Node) where {T}
     roots_reach = copy(reachable_roots(subgraph))
     vars_reach = copy(reachable_dominance(subgraph))
     return PathEdge(dominating_node(subgraph), dominated_node(subgraph), sum, vars_reach, roots_reach)
 end
-export make_factored_edge
 
 
 """Returns true if a new factorable subgraph was created inside `subgraph` during the factorization process. If true then must compute factorable subgraphs for the edges inside `subgraph`. `subgraph_exists` should be called before executing this function otherwise it may return false when no new subgraphs have been created."""
@@ -408,6 +400,7 @@ end
 function factor_subgraph!(subgraph::FactorableSubgraph{T}) where {T}
     local new_edge::PathEdge{T}
     if subgraph_exists(subgraph)
+
         if is_branching(subgraph) #handle the uncommon case of factorization creating new factorable subgraphs internal to subgraph
             sum = evaluate_branching_subgraph(subgraph)
             new_edge = make_factored_edge(subgraph, sum)
@@ -425,7 +418,6 @@ function factor_subgraph!(subgraph::FactorableSubgraph{T}) where {T}
         add_edge!(graph(subgraph), new_edge)
     end
 end
-export factor_subgraph!
 
 order!(::FactorableSubgraph{T,DominatorSubgraph}, nodes::Vector{T}) where {T<:Integer} = sort!(nodes,
 ) #largest node number last
@@ -514,10 +506,12 @@ function factor!(a::DerivativeGraph{T}) where {T}
         subgraph = pop!(subgraph_list)
 
         factor_subgraph!(subgraph)
+        #test
+        # Vis.draw_dot(graph(subgraph), start_nodes=[93], graph_label="factored subgraph $(vertices(subgraph))", value_labels=false)
+        #end test
     end
     return nothing #return nothing so people don't mistakenly think this is returning a copy of the original graph
 end
-export factor!
 
 function follow_path(a::DerivativeGraph{T}, root_index::Integer, var_index::Integer) where {T}
     current_node_index = root_index_to_postorder_number(a, root_index)
@@ -563,30 +557,33 @@ function evaluate_path(graph::DerivativeGraph, root_index::Integer, var_index::I
 end
 
 
-"""verifies that there is a single path from each root to each variable, if a path exists. Used for diagnostics and debugging. Not used in normal use of FSD."""
+"""Verifies that there is a single path from each root to each variable, if a path exists. This should be an invariant of the factored graph so it should always be true. But the algorithm is complex enough that it is easy to accidentally introduce errors when adding features. `verify_paths` has negligible runtime cost compared to factorization."""
 function _verify_paths(graph::DerivativeGraph, a::Int)
     branches = child_edges(graph, a)
+    valid_graph = true
 
     if length(branches) > 1
-        intersection::BitVector = mapreduce(reachable_variables, .&, branches, init=trues(domain_dimension(graph)))
-        if !is_zero(intersection)
-            @info "More than one path to variable for node $a. Non-zero intersection of reachable variables $intersection"
-            for branch in branches
-                @info "reachable variables $(reachable_variables(branch))"
+        for br1 in 1:length(branches)
+            for br2 in br1+1:length(branches)
+                roots_intersect = reachable_roots(branches[br1]) .& reachable_roots(branches[br2])
+                if !is_zero(roots_intersect) #if any shared roots then can't have any shared variables
+                    if any(reachable_variables(branches[br1]) .& reachable_variables(branches[br2]))
+                        valid_graph = false
+                        @info "More than one path to variable for node $a. Non-zero intersection of reachable variables: $(reachable_variables(branches[br1]) .& reachable_variables(branches[br2]))"
+                        #could break on first bad path but prefer to list all of them. Better for debugging.
+                    end
+                end
             end
-            return false
         end
+
         for child in children(graph, a)
-            if !(_verify_paths(graph, child))
-                return false
-            end
+            valid_graph &= _verify_paths(graph, child)
         end
     end
-
-    return true
+    return valid_graph
 end
 
-"""verifies that there is a single path from each root to each variable, if such a path exists. Used for diagnostics and debugging. Normal us of FSD does not require these functions."""
+"""verifies that there is a single path from each root to each variable, if such a path exists."""
 function verify_paths(graph::DerivativeGraph)
     for root in roots(graph)
         if !_verify_paths(graph, postorder_number(graph, root))
@@ -604,7 +601,7 @@ function symbolic_jacobian!(graph::DerivativeGraph, variable_ordering::AbstractV
     result = Matrix{Node}(undef, outdim, indim)
     factor!(graph)
 
-    verify_paths(graph)
+    @assert verify_paths(graph) #ensure a single path from each root to each variable. Derivative is likely incorrect if this is not true.
 
     for (i, var) in pairs(variable_ordering)
         var_index = variable_node_to_index(graph, var)
@@ -620,8 +617,29 @@ export symbolic_jacobian!
 symbolic_jacobian!(a::DerivativeGraph) = symbolic_jacobian!(a, variables(a))
 
 
+"""Computes sparse Jacobian matrix `J` using `SparseArray`. Each element `J[i,j]` is an expression graph which is the symbolic value of the Jacobian ∂fᵢ/∂vⱼ, where fᵢ is the ith output of the function represented by graph and vⱼ is the jth variable."""
+function sparse_symbolic_jacobian!(graph::DerivativeGraph, variable_ordering::AbstractVector{T}) where {T<:Node}
+    row_indices = Int64[]
+    col_indices = Int64[]
+    values = Node[]
 
+    factor!(graph)
 
+    @assert verify_paths(graph) #ensure a single path from each root to each variable. Derivative is likely incorrect if this is not true.
+
+    for root in 1:codomain_dimension(graph)
+        for var in findall(reachable_variables(graph, root_index_to_postorder_number(graph, root)))
+            push!(row_indices, root)
+            push!(col_indices, var)
+            push!(values, evaluate_path(graph, root, var))
+        end
+    end
+
+    return sparse(row_indices, col_indices, values, codomain_dimension(graph), domain_dimension(graph))
+end
+export sparse_symbolic_jacobian!
+
+"""Computes an `Expr` that can be compiled to compute the Jacobian at run time"""
 function jacobian_Expr!(graph::DerivativeGraph, variable_order::AbstractVector{S}; in_place=false) where {S<:Node}
     tmp = symbolic_jacobian!(graph, variable_order)
     node_to_var = Dict{Node,Union{Symbol,Real}}()
@@ -636,7 +654,8 @@ function jacobian_Expr!(graph::DerivativeGraph, variable_order::AbstractVector{S
 
     body = Expr(:block)
     if !in_place
-        push!(body.args, :(result = fill(0.0, $(size(tmp))))) #shouldn't need to fill with zero. All elements should be defined. Unless doing sparse Jacobian.
+        push!(body.args, :(result = fill(0.0, $(size(tmp))))) #shouldn't need to fill with zero. All elements should be defined. Unless doing sparse Jacobian. 
+        #TODO: Unfortunately this fixes the type of the result to be Float64. Should write code so the type is picked up from the runtime arguments to the generated function. Add this feature later.
     end
 
     for (i, node) in pairs(tmp)
@@ -653,13 +672,55 @@ function jacobian_Expr!(graph::DerivativeGraph, variable_order::AbstractVector{S
         return Expr(:->, Expr(:tuple, map(x -> node_symbol(x), ordering)...), body)
     end
 end
-export jacobian_Expr!
 
+"""Compiles a function which computes an m×n matrix containing the Jacobian of the ℝᵐ->ℝⁿ function defined by `graph`:
+
+        ∂f₁/∂v₁  ...  ∂f₁/∂vₙ 
+
+        ∂fₘ/∂v₁  ...  ∂fₘ/∂vₙ 
+
+Destroys `graph` in the process. Example returning a new matrix with every call to the generated Jacobian function:
+
+```
+julia> @variables x 
+
+julia> nx = Node(x);ny = Node(y);
+
+julia> gr = DerivativeGraph([nx^2*ny^2,nx^3*ny^3]);
+
+julia> func = jacobian_function!(gr, [nx,ny]);
+
+julia> func(2,3)
+2×2 Matrix{Float64}:
+  36.0   24.0
+ 324.0  216.0
+```
+
+Example of in_place Jacobian generation:
+```
+julia> func_in_place = jacobian_function!(gr, [nx,ny],in_place=true)
+
+julia> a = Matrix{Float64}(undef,2,2);
+
+julia> func_in_place(2,3,a)
+2×2 Matrix{Float64}:
+  36.0   24.0
+ 324.0  216.0
+
+julia> a
+2×2 Matrix{Float64}:
+  36.0   24.0
+ 324.0  216.0
+
+ ```
+
+"""
 jacobian_function!(graph::DerivativeGraph, variable_order::AbstractVector{S}; in_place=false) where {S<:Node} = @RuntimeGeneratedFunction(jacobian_Expr!(graph, variable_order; in_place))
 export jacobian_function!
-
 jacobian_function!(graph::DerivativeGraph; in_place::Bool=true) = jacobian_function!(graph, variables(graph), in_place=in_place)
 
+"""Non-destructive form of jacobian_function!"""
+jacobian_function(graph::DerivativeGraph; in_place::Bool=true) = jacobian_function!(deepcopy(graph), in_place)
 function unique_nodes(jacobian::AbstractArray{T}) where {T<:Node}
     nodes = Set{Node}()
     for oned in all_nodes.(jacobian)
@@ -668,8 +729,9 @@ function unique_nodes(jacobian::AbstractArray{T}) where {T<:Node}
     return nodes
 end
 
+"""Count of number of operations in graph."""
 number_of_operations(jacobian::AbstractArray{T}) where {T<:Node} = length(filter(x -> is_tree(x), unique_nodes(jacobian)))
-export number_of_operations
+
 
 """computes ∂A/∂variables[1],...,variables[n]. Repeated differentiation rather than computing different columns of the Jacobian. Example:
 
@@ -721,6 +783,5 @@ function _derivative(A::Matrix{<:Node}, variable::T) where {T<:Node}
         return Node.(result)
     end
 end
-
 
 

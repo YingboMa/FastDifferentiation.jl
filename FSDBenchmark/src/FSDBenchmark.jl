@@ -3,102 +3,45 @@ using Symbolics
 using FileIO
 using BenchmarkTools
 using Statistics
-using DataFrames
-using CSV
+
 using CurveFit
 using Plots
 using Memoize
 import FastSymbolicDifferentiation
-using FastSymbolicDifferentiation: derivative, jacobian_function!, symbolic_jacobian!, Node, UnspecifiedFunction, codomain_dimension, domain_dimension, function_of, number_of_operations, DerivativeGraph
 using StaticArrays
+using FastSymbolicDifferentiation: derivative, jacobian_function!, symbolic_jacobian!, Node, UnspecifiedFunction, codomain_dimension, domain_dimension, function_of, number_of_operations, DerivativeGraph
 using LaTeXStrings
 import LinearAlgebra
 
+using DataFrames
+using CSV
+
+filename(model_function, package, benchmark, min_model_size, max_model_size, simplify) = DATA_DIR * join([nameof(model_function), nameof(typeof(package)), nameof(typeof(benchmark))], "_") * "_$(min_model_size)_$(max_model_size)_simplify_$simplify.csv"
+export filename
+
+function write_data(data::DataFrame, model_function, package, benchmark, min_model_size, max_model_size, simplify)
+    CSV.write(
+        filename(model_function, package, benchmark, min_model_size, max_model_size, simplify),
+        data)
+end
+export write_data
 
 const FSD = FastSymbolicDifferentiation
 
+include("Types.jl")
 include("Chebyshev.jl")
 include("SphericalHarmonics.jl")
 include("Transformations.jl")
-# include("LagrangianDynamics.jl")
+include("LagrangianDynamics.jl")
 include("SimpsonHermite.jl")
 
 
 @variables x, y, z
 
-const SYMBOLIC = "symbolic"
-const EXE = "exe"
-const MAKE_FUNCTION = "make_function"
 
-filename(function_name, benchmark_name, min_order, max_order, simplify) = "Data/$(function_name)-$(benchmark_name)-$min_order-$max_order-simplification-$simplify.csv"
-
-function create_Symbolics_exe(max_l, simplify=true)
-    @variables x, y, z
-
-    jac = Symbolics.jacobian(SHFunctions(max_l, x, y, z), [x, y, z]; simplify=simplify)
-    fn1, fn2 = eval.(build_function(jac, [x, y, z]))
-    return fn1, fn2
-end
-export create_Symbolics_exe
-
-
-function Symbolics_spherical_harmonics(min_order, max_order, simplify=true)
-    output = DataFrame()
-
-    for n in min_order:1:max_order
-        trial = @benchmark Symbolics.jacobian(fn, [$x, $y, $z], simplify=$simplify) setup = fn = SHFunctions($n, $x, $y, $z) evals = 1
-        push!(output, preprocess_trial(trial, "$n"))
-    end
-    CSV.write(Symbolics_filename(SH_NAME, "symbolic", min_order, max_order, simplify), output)
-    return output
-end
-export Symbolics_spherical_harmonics
-
-function plot_data(bench1, bench2, graph_title, simplify)
-    data1 = CSV.read(bench1, DataFrame)
-    data2 = CSV.read(bench2, DataFrame)
-
-    graph_title = "Ratio of times, Symbolics/FSD: $graph_title"
-    # plot(data1[:, :SHOrder], data1[:, :minimum] / 1e6, ylabel="ms", xlabel="Spherical Harmonic Order")
-    # plot!(data2[:, :SHOrder], data2[:, :minimum] / 1e6, ylabel="ms", xlabel="Spherical Harmonic Order")
-    p = plot(data1[:, :SHOrder], data2[:, :minimum] ./ data1[:, :minimum], xlabel="Spherical Harmonic Order", ylabel="Ratio", title=graph_title, titlefontsizes=10, legend=false)
-
-    return p
-end
-export plot_data
-
-
-function plot_SH_times(min_order, max_order, simplify, graph_title, filename_function, algorithm_name)
-    msec_scale = 1e-6
-    processes = ["symbolic", "make_function", "exe"]
-    for process in processes
-        data = CSV.read(filename_function(SH_NAME, process, min_order, max_order, simplify), DataFrame)
-        plot!(data[:, :minimum] * msec_scale, label=process * algorithm_name)
-    end
-
-    plot!(xlabel="Spherical Harmonic Order", yscale=:log10, ylabel="log₁₀(time),msecs", title=graph_title, legend_position=:topleft)
-end
-export plot_SH_times
-
-function plot_SH_symbolic_time(min_order, max_order, simplify)
-    plot_data(
-        FSD_filename(SH_NAME, "symbolic", min_order, max_order, simplify),
-        Symbolics_filename(SH_NAME, "symbolic", min_order, max_order, simplify),
-        "symbolic processing",
-        simplify)
-    plot!(xticks=min_order:2:max_order)
-end
-export plot_SH_symbolic_time
-
-function plot_SH_exe_time(min_order, max_order, simplify)
-    plot_data(
-        FSD_filename(SH_NAME, EXE, min_order, max_order, simplify),
-        Symbolics_filename(SH_NAME, EXE, min_order, max_order, simplify),
-        "execution",
-        simplify)
-    plot!(xticks=min_order:2:max_order)
-end
-export plot_SH_exe_time
+const DATA_DIR = "Data/"
+extract_info(model_size, benchmark_timing) = Any[Int64(model_size), Float64(minimum(benchmark_timing).time), Float64(median(benchmark_timing).time), Float64(maximum(benchmark_timing).time), Int64(benchmark_timing.allocs), Int64(benchmark_timing.memory)]
+export extract_info
 
 """plot that shows how FSD jacobian is close to optimal for SH because number of operations of Jacobian is a fixed constant (roughly 2.5) times the number of operations in the original function"""
 function plot_SH_FSD_graph_vs_jacobian_size(min_order, max_order)
@@ -109,51 +52,148 @@ function plot_SH_FSD_graph_vs_jacobian_size(min_order, max_order)
 end
 export plot_SH_FSD_graph_vs_jacobian_size
 
-function plot_SH_make_function_time(min_order, max_order, simplify)
-    plot_data(
-        FSD_filename(SH_NAME, MAKE_FUNCTION, min_order, max_order, simplify),
-        Symbolics_filename(SH_NAME, MAKE_FUNCTION, min_order, max_order, simplify),
-        "make_function",
-        simplify)
-    plot!(xticks=min_order:2:max_order)
-end
-export plot_SH_make_function_time
 
-extract_info(model_size, benchmark_timing) = [model_size, minimum(benchmark_timing).time, median(benchmark_timing).time, maximum(benchmark_timing).time, benchmark_timing.allocs, benchmark_timing.memory]
 
-function write_data(data, model_function, benchmark_name, min_model_size, max_model_size, simplify)
-    println(benchmark_name)
-    CSV.write(
-        filename(nameof(model_function), benchmark_name, min_model_size, max_model_size, simplify),
-        data)
+#Benchmark code for FSD
+
+run_benchmark(model_function::Function, model_size, package::FastSymbolic, ::Symbolic; simplify=false) = @benchmark symbolic_jacobian!(gr) setup = gr = $model_function($package, $model_size) evals = 1
+
+run_benchmark(model_function::Function, model_size, package::FastSymbolic, ::MakeFunction; simplify=false) = @benchmark jacobian_function!(graph) setup = (graph = $model_function($package, $model_size)) evals = 1
+
+function run_benchmark(model_function::Function, model_size, package::FastSymbolic, ::Exe, simplify=false)
+    graph = model_function(package, model_size)
+    exe = jacobian_function!(graph, FSD.variables(graph), in_place=true)
+
+    input = rand(domain_dimension(graph))
+    output = rand(codomain_dimension(graph), domain_dimension(graph))
+    return @benchmark $exe($input..., $output)
 end
 
-function benchmark_FSD(model_function::Function, min_model_size, max_model_size, simplify=false)
-    # @benchmark Symbolics.jacobian(fn, [$x, $y, $z], simplify=$simplify) setup = gr = evals = 1
-    symbolic_data = DataFrame(model_size=Int64[], minimum=Float64[], median=Float64[], maximum=Float64[], allocations=Int64[], memory_estimate=Int64[])
-    exe_data = DataFrame(model_size=Int64[], minimum=Float64[], median=Float64[], maximum=Float64[], allocations=Int64[], memory_estimate=Int64[])
-    make_function_data = DataFrame(model_size=Int64[], minimum=Float64[], median=Float64[], maximum=Float64[], allocations=Int64[], memory_estimate=Int64[])
+#Benchmark code for Symbolics
 
+function run_benchmark(model_function, model_size, package::JuliaSymbolics, ::Symbolic; simplify=false)
+    tmp = model_function(package, model_size)
+    @benchmark Symbolics.jacobian(tmp[1], tmp[2]; simplify=$simplify) setup = (tmp = $model_function($package, $model_size))
+end
 
-    for model_size in min_model_size:max_model_size
-        symbolic_time = @benchmark symbolic_jacobian!(gr) setup = gr = $model_function($model_size) evals = 1
+function run_benchmark(model_function, model_size, package::JuliaSymbolics, ::Exe; simplify=false)
+    model, vars = model_function(package, model_size)
+    jac = Symbolics.jacobian(model, vars; simplify=simplify)
+    out_of_place, in_place = build_function(jac, vars; expression=Val{false})
+    tmp_matrix = out_of_place(rand(length(vars))) #generate a matrix of the correct size
 
-        make_function_time = @benchmark jacobian_function!(graph) setup = (graph = $model_function($model_size)) evals = 1
+    return @benchmark $in_place($tmp_matrix, rand(length($vars)))
+end
 
-        graph = model_function(model_size)
-        exe = jacobian_function!(graph, FSD.variables(graph), in_place=true)
+function run_benchmark(model_function, model_size, package::JuliaSymbolics, ::MakeFunction; simplify=false)
+    model, vars = model_function(package, model_size)
+    jac = Symbolics.jacobian(model, vars; simplify=simplify)
+    return @benchmark build_function($jac, $vars; expression=Val{false})
+end
+export run_benchmark
 
-        input = rand(domain_dimension(graph))
-        output = rand(codomain_dimension(graph), domain_dimension(graph))
-        exe_time = @benchmark $exe($input..., $output)
+make_data() = DataFrame(model_size=Int64[], minimum=Float64[], median=Float64[], maximum=Float64[], allocations=Int64[], memory_estimate=Int64[])
 
-        push!(symbolic_data, extract_info(model_size, symbolic_time))
-        push!(exe_data, extract_info(model_size, exe_time))
-        push!(make_function_data, extract_info(model_size, make_function_time))
+function single_benchmark(model_function::Function, model_range, package::AbstractPackage, benchmark::AbstractBenchmark, simplify=false)
+    data = make_data()
+    FSD.clear_cache() #clear cache otherwise memory usage keeps rising monotonically. Wouldn't expect this to be a problem until functions become gigantic, billions of nodes.
+    for model_size in model_range
+        @info "Starting model size $model_size"
+        timing = run_benchmark(model_function, model_size, package, benchmark, simplify=simplify)
+        push!(data, extract_info(model_size, timing))
+        @info "Finished for model size $model_size"
     end
-    write_data.([symbolic_data, exe_data, make_function_data], model_function, [SYMBOLIC, EXE, MAKE_FUNCTION], min_model_size, max_model_size, simplify)
+
+    write_data(data, model_function, package, benchmark, minimum(model_range), maximum(model_range), simplify)
 end
-export benchmark_FSD
+export single_benchmark
+
+# function benchmark(models, sizes, package::AbstractPackage, benchmarks::AbstractVector{AbstractBenchmark}; simplify::Bool=false)
+#     for (model, size_range) in zip(models, sizes)
+#         for bench in benchmarks
+#             single_benchmark(model, size_range, package, bench, simplify)
+#         end
+#     end
+# end
+
+benchmark_sizes() = [5:1:25, 5:1:30]
+export benchmark_sizes
+model_functions() = [spherical_harmonics, chebyshev]
+benchmark_types() = [Symbolic(), Exe(), MakeFunction()]
+export benchmark_types
+params() = (model_functions(), benchmark_sizes())
+export params
+
+benchmark_package(package, range, model_function; simplify=false) = single_benchmark.(Ref(model_function), Ref(range), Ref(package), benchmark_types(), simplify)
+
+
+benchmark_package(package; simplify=false) = benchmark_package.(Ref(package), benchmark_sizes(), model_functions(), simplify=simplify)
+export benchmark_package
+
+benchmark_all(simplify::Bool) = benchmark_package.([FastSymbolic(), JuliaSymbolics()]; simplify=simplify)
+export benchmark_all
+
+function plot_data(model_function, bench1, graph_title::AbstractString, xlabel::AbstractString, simplify)
+    fname1 = filename(model_function, FastSymbolic(), bench1, extrema(benchmark_sizes()[findfirst(x -> x == model_function, model_functions())])..., simplify)
+    fname2 = filename(model_function, JuliaSymbolics(), bench1, extrema(benchmark_sizes()[findfirst(x -> x == model_function, model_functions())])..., simplify)
+    data1 = CSV.read(fname1, DataFrame)
+    data2 = CSV.read(fname2, DataFrame)
+    println(data2)
+    graph_title = "Time ratio, Symbolics/FSD: $graph_title"
+
+    #find first missing value
+    last_good = findfirst(x -> x === missing, data2[:, :minimum])
+    if last_good === nothing
+        last_good = size(data2)[1]
+    end
+
+    println("lastgood $last_good")
+    ratio = [data2[i, :minimum] === missing ? missing : data2[i, :minimum] / data1[i, :minimum] for i in 1:size(data2)[1]]
+    println("ratio $ratio")
+    p = plot(data1[1:last_good, :model_size], ratio, xlabel=xlabel, ylabel="Ratio", title=graph_title, titlefontsizes=10, legend=false, marker=:circle)
+
+    return p
+end
+export plot_data
+
+function publication_benchmarks(simplify::Bool, run_benchmarks=true)
+    if run_benchmarks
+        benchmark_all(simplify)
+    end
+
+    for bench in benchmark_types()
+        for model in model_functions()
+            bench_type = typeof(bench)
+            savefig(plot_data(model, bench, "$bench_type\n$model", "$model order", simplify),
+                "$(DATA_DIR)figure_$(model)_$(bench_type).svg"
+            )
+        end
+    end
+end
+export publication_benchmarks
+
+function test_Symbolics_limit()
+    model, vars = spherical_harmonics(JuliaSymbolics(), 20)
+    jac = Symbolics.jacobian(model, vars; simplify=false)
+    out_of_place, in_place = build_function(jac, vars; expression=Val{false})
+    tmp_matrix = out_of_place(rand(length(vars))) #generate a matrix of the correct size
+
+    in_place(tmp_matrix, rand(length(vars)))
+
+    # for i in 5:1:50
+    #     try
+    #         model, vars = chebyshev(JuliaSymbolics(), i)
+    #         jac = Symbolics.jacobian(model, vars; simplify=false)
+    #         build_function(jac, vars; expression=Val{false})
+    #         # out_of_place, in_place = build_function(jac, vars; expression=Val{false})
+    #         println("finished size $i")
+    #     catch exc
+    #         println("failed at size $i $exc")
+    #         break
+    #     end
+    # end
+end
+export test_Symbolics_limit
 
 
 end # module Benchmarks

@@ -7,9 +7,13 @@ using .FSDTests
 
 
 function test()
-    _, graph, _, _ = simple_dominator_graph()
-    factor!(graph)
+    @variables x
+    nx = Node(x)
+    zr = Node(1.0)
+
+    graph = DerivativeGraph([nx, zr])
+    jac = symbolic_jacobian!(graph, [nx])
+
 end
-export test
 
 
