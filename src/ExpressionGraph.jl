@@ -176,7 +176,6 @@ function simplify_check_cache(::typeof(*), na, nb, cache)
     b = Node(nb)
 
     #TODO sort variables so if y < x then x*y => y*x. The will automatically get commutativity.
-    #TODO add another check that moves all constants to the left and then does constant propagation
     #c1*c2 = c3, (c1*x)*(c2*x) = c3*x
     if is_zero(a) && is_zero(b)
         return Node(value(a) + value(b)) #user may have mixed types for numbers so use automatic promotion to widen the type.
@@ -209,7 +208,7 @@ function simplify_check_cache(::typeof(+), na, nb, cache)
 
     #TODO sort variables so if y < x then x*y => y*x. The will automatically get commutativity.
     #TODO add another check that moves all contants to the left and then does constant propagation
-    #c1 + c2 = c3, (c1 + x)+(c2 + x) = c3+x
+    #c1 + c2 = c3, (c1 + x)+(c2 + x) = c3+2*x
 
     if is_zero(a)
         return b
@@ -315,7 +314,7 @@ end
 
 #need to define because derivative functions can return inv
 Base.inv(a::Node{typeof(/),2}) = children(a)[2] / children(a)[1]
-Base.inv(a::Node{SymbolicUtils.BasicSymbolic{Real},0}) = 1 / a
+Base.inv(a::Node) = 1 / a
 
 #efficient explicit methods for most common cases
 derivative(a::Node{T,1}, index::Val{1}) where {T} = derivative(value(a), (children(a)[1],), index)

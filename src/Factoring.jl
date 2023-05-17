@@ -410,7 +410,7 @@ function factor_subgraph!(subgraph::FactorableSubgraph{T}) where {T}
         end
         add_non_dom_edges!(subgraph)
         #reset roots in R, if possible. All edges earlier in the path than the first vertex with more than one child cannot be reset.
-        edges_to_delete = reset_edge_masks!(subgraph) #TODO need to modify reset_edge_masks! so it handles the case where a path may have been destroyed due to factorization.
+        edges_to_delete = reset_edge_masks!(subgraph)
         for edge in edges_to_delete
             delete_edge!(graph(subgraph), edge)
         end
@@ -616,6 +616,13 @@ export symbolic_jacobian!
 
 symbolic_jacobian!(a::DerivativeGraph) = symbolic_jacobian!(a, variables(a))
 
+function symbolic_jacobian(a::DerivativeGraph, variable_ordering::AbstractVector{T}) where {T<:Node}
+    tmp = DerivativeGraph(roots(a)) #rebuild derivative graph. This is probably less efficient than deepcopy but deepcopy(Node(x)) != Node(x) which can lead to all kinds of trouble.
+    return symbolic_jacobian!(tmp, variable_ordering)
+end
+
+symbolic_jacobian(a::DerivativeGraph) = symbolic_jacobian(a, variables(a))
+export symbolic_jacobian
 
 """Computes sparse Jacobian matrix `J` using `SparseArray`. Each element `J[i,j]` is an expression graph which is the symbolic value of the Jacobian ∂fᵢ/∂vⱼ, where fᵢ is the ith output of the function represented by graph and vⱼ is the jth variable."""
 function sparse_symbolic_jacobian!(graph::DerivativeGraph, variable_ordering::AbstractVector{T}) where {T<:Node}
@@ -718,9 +725,30 @@ julia> a
 jacobian_function!(graph::DerivativeGraph, variable_order::AbstractVector{S}; in_place=false) where {S<:Node} = @RuntimeGeneratedFunction(jacobian_Expr!(graph, variable_order; in_place))
 export jacobian_function!
 jacobian_function!(graph::DerivativeGraph; in_place::Bool=true) = jacobian_function!(graph, variables(graph), in_place=in_place)
+export jacobian_function!
 
 """Non-destructive form of jacobian_function!"""
-jacobian_function(graph::DerivativeGraph; in_place::Bool=true) = jacobian_function!(deepcopy(graph), in_place)
+jacobian_function(graph::DerivativeGraph; in_place::Bool=true) = jacobian_function!(deepcopy(graph), in_place) #here it is okay to use deepcopy because user will never be accessing the new variables that will be created. See symbolic_jacobian for expanded discussion about this problem.
+export jacobian_function
+
+function jacobian_function(graph::DerivativeGraph, variable_order::AbstractVector{S}; in_place=false) where {S<:Node}
+    tmp = DerivativeGraph(roots(graph)) #need to recreate derivative graph with the same variables as were passed in the variable_order parameter.
+    return @RuntimeGeneratedFunction(jacobian_Expr!(tmp, variable_order; in_place))
+end
+
+function hessian(graph::DerivativeGraph, variable_order)
+    @assert codomain_dimension(graph) == 1
+    return hessian(roots(graph)[1], variable_order)
+end
+
+function hessian(expression::Node, variable_order::AbstractVector{S}) where {S<:Node}
+    tmp = DerivativeGraph(expression)
+    jac = symbolic_jacobian!(tmp, variable_order)
+    tmp2 = DerivativeGraph(vec(jac))
+    return symbolic_jacobian!(tmp2, variable_order)
+end
+export hessian
+
 function unique_nodes(jacobian::AbstractArray{T}) where {T<:Node}
     nodes = Set{Node}()
     for oned in all_nodes.(jacobian)
