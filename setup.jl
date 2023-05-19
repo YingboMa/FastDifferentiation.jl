@@ -2,8 +2,9 @@
 
 using FastSymbolicDifferentiation
 using FastSymbolicDifferentiation.FSDTests
+using StaticArrays
 
-using Symbolics
+using Symbolics: @variables
 
 @variables x y z
 nx = Node(x)
