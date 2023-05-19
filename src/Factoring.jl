@@ -629,15 +629,21 @@ function sparse_symbolic_jacobian!(graph::DerivativeGraph, variable_ordering::Ab
     row_indices = Int64[]
     col_indices = Int64[]
     values = Node[]
+    @assert length(variable_ordering) == domain_dimension(graph)
 
     factor!(graph)
 
     @assert verify_paths(graph) #ensure a single path from each root to each variable. Derivative is likely incorrect if this is not true.
+    #input is an array of Node's representing variables. Need a mapping from the variable index matching the Node to the index in variable_ordering
+    variable_index = map(x -> variable_postorder_to_index(graph, postorder_number(graph, x)), variable_ordering)
+    var_order_to_ = similar(variable_index)
+
 
     for root in 1:codomain_dimension(graph)
         for var in findall(reachable_variables(graph, root_index_to_postorder_number(graph, root)))
+            #TODO this does not use variable_ordering. Need to fix.
             push!(row_indices, root)
-            push!(col_indices, var)
+            push!(col_indices, variable_index[var])
             push!(values, evaluate_path(graph, root, var))
         end
     end
@@ -736,12 +742,14 @@ function jacobian_function(graph::DerivativeGraph, variable_order::AbstractVecto
     return @RuntimeGeneratedFunction(jacobian_Expr!(tmp, variable_order; in_place))
 end
 
+"""Computes the full symbolic Hessian matrix"""
 function hessian(graph::DerivativeGraph, variable_order)
     @assert codomain_dimension(graph) == 1
     return hessian(roots(graph)[1], variable_order)
 end
 
-function hessian(expression::Node, variable_order::AbstractVector{S}) where {S<:Node}
+"""Computes the full symbolic Hessian matrix"""
+function hessian(expression::Node, variable_order::AbstractVector{S}) where {S<:Node} #would prefer to return a Symmetric matrix but that type only works with elements that are subtypes of Number. Which Node is not. Fix later, if possible.
     tmp = DerivativeGraph(expression)
     jac = symbolic_jacobian!(tmp, variable_order)
     tmp2 = DerivativeGraph(vec(jac))
@@ -749,9 +757,14 @@ function hessian(expression::Node, variable_order::AbstractVector{S}) where {S<:
 end
 export hessian
 
+function sparse_hessian(expression::Node, variable_order::AbstractVector{S}) where {S<:Node}
+    gradient = sparse_symbolic_jacobian(DerivativeGraph(expression), variable_order)
+end
+
 function unique_nodes(jacobian::AbstractArray{T}) where {T<:Node}
     nodes = Set{Node}()
-    for oned in all_nodes.(jacobian)
+    for index in eachindex(jacobian)
+        oned = all_nodes(jacobian[index])
         union!(nodes, oned)
     end
     return nodes

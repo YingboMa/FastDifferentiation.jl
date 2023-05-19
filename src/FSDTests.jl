@@ -27,7 +27,6 @@ using TestItems
 include("../FSDBenchmark/src/Types.jl")
 include("../FSDBenchmark/src/Chebyshev.jl")
 include("../FSDBenchmark/src/SphericalHarmonics.jl")
-include("../FSDBenchmark/src/LagrangianDynamics.jl")
 
 """If `compute_dominators` is `true` then computes `idoms` tables for graph, otherwise computes `pidoms` table`"""
 function compute_dominance_tables(graph::DerivativeGraph{T}, compute_dominators::Bool) where {T<:Integer}
@@ -1615,6 +1614,23 @@ end
             @test sprse[index] == dense[index]
         end
     end
+
+    fsd_graph = spherical_harmonics(FastSymbolic(), 10, x, y, z)
+    sprse = sparse_symbolic_jacobian!(fsd_graph, reverse(variables(fsd_graph)))
+    fsd_graph = spherical_harmonics(FastSymbolic(), 10, x, y, z) #because global cache has not been reset the sparse and dense graphs should have identical elements.
+    dense = symbolic_jacobian!(fsd_graph, reverse(variables(fsd_graph)))
+
+    # for index in CartesianIndices(sprse)
+    #     @test sprse[index] == dense[index]
+    # end
+
+    for index in CartesianIndices(dense)
+        if sprse[index] != dense[index] #empty elements in sprse get value Node{Int64,0} wherease zero elements in dense get value Node{Float64,0}. These are not == so need special case.
+            @test value(sprse[index]) == value(dense[index])
+        else
+            @test sprse[index] == dense[index]
+        end
+    end
 end
 
 @testitem "spherical harmonics jacobian evaluation test" begin
@@ -1694,35 +1710,5 @@ end
     @test isapprox(zeros(2, 2), value.(derivative(A, nq2))) #taking derivative wrt variable not present in the graph returns all zero matrix
     @test DA == derivative(A, nq1)
 end
-
-@testitem "derivative of simple Unspecified Function" begin
-    using Symbolics: @variables
-    using StaticArrays
-    using FastSymbolicDifferentiation.FSDInternals
-
-    @variables x y
-
-    ufn = function_of(:q, x, y)
-    deriv = value(derivative(derivative(ufn, Val{1}()), Val{2}()))
-
-    @test deriv.variables == SVector(Node(x), Node(y))
-
-    fn = DerivativeGraph(x * ufn)
-    jac = symbolic_jacobian!(fn)
-    @test jac[1, 1] == ufn + x * derivative(ufn, Val{1}())
-    @test jac[1, 2] == x * derivative(ufn, Val{2}())
-end
-
-@testitem "derivative of more complex Unspecified Function" begin
-    using Symbolics: @variables
-    @variables x y
-
-    q = function_of(:q, x, y)
-    f = x * q + y * q
-    graph = DerivativeGraph([f])
-    symbolic_jacobian!(graph)
-
-end
-
 
 end #module
